@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Node script to populate transloco i18n key files from a source csv file",
   "bin": {
-    "tci": "./index.js"
+    "tci": "./cli.js"
   },
   "repository": {
     "type": "git",
