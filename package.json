@@ -16,6 +16,7 @@
   },
   "homepage": "https://github.com/bilalhaider/transloco-csv-importer#readme",
   "devDependencies": {
+    "csv-parse": "^4.8.2",
     "path": "^0.12.7",
     "yargs": "^15.0.2"
   }
