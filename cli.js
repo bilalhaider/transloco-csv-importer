@@ -75,7 +75,7 @@ function importFromCSVToJSON(ar) {
     });
 
     // extract unique languages in dest dir
-    const languagesInFiles = [...new Set(destination.map(x => x.lang))].sort();
+    const languagesInFiles = [...new Set(destination.map(x => x.lang))].sort().map(x => x.toLowerCase());
 
     console.debug(`Found ${languagesInFiles.join(', ')} files in destination dir`);
 
@@ -84,8 +84,9 @@ function importFromCSVToJSON(ar) {
     // read and parse csv source file
     const records = csvParse(fs.readFileSync(sourceFilePath), {
         columns: (headerRow) => {
+            headerRow = headerRow.map(x => x.toLowerCase());
             languagesInSource = headerRow.slice(1).sort();
-            return languagesInSource.map(x => x.toLowerCase());
+            return headerRow;
         }
     });
 
