@@ -22,6 +22,11 @@ require('yargs')
                 default: path.join('src', 'assets', 'i18n'),
                 type: 'string',
             })
+            .option('scopeAliases', {
+                description: 'Scope aliases to be used. Multiple values can be provided, each value must be in format alias:scope',
+                alias: 'a',
+                type: 'array',
+            })
             .option('sort', {
                 description: 'Should sort keys when writing json files',
                 default: true,
@@ -40,8 +45,18 @@ function importFromCSVToJSON(ar) {
 
     const sourceFilePath = path.join(process.cwd(), ar.source);
     const destPath = path.join(process.cwd(), ar.destPath);
+    const shouldSort = ar.sort;
+    const scopeAliases = (ar.scopeAliases || []).map(x => {
 
-    console.log(`Starting csv to json operation. CSV: ${sourceFilePath}, JSON files in: ${destPath}`);
+        const parts = x.split(':');
+
+        return {
+            alias: parts[0],
+            scope: parts[1]
+        };
+    });
+
+    console.log(`Starting csv to json operation. CSV: ${sourceFilePath}, JSON files in: ${destPath}. Aliases used: ${scopeAliases.map(x => `${x.alias}:${x.scope}`).join(',')}`);
 
     // check if souce file exists
     if(!fs.existsSync(sourceFilePath)) {
@@ -56,7 +71,7 @@ function importFromCSVToJSON(ar) {
     }
 
     // get all destination files
-    const destination = getFiles(destPath);
+    let destination = getFiles(destPath);
 
     // check if there are any dest files
     if(destination.length == 0) {
@@ -64,7 +79,8 @@ function importFromCSVToJSON(ar) {
         return 1;
     }
 
-    console.debug(`Found ${destination.length + 1} files in dest dir`);
+    console.debug(`Found ${destination.length} files in dest dir`);
+    destination.forEach(x => console.log(x));
 
     // extract language names from dest file names
     destination = destination.map(x => {
@@ -77,12 +93,12 @@ function importFromCSVToJSON(ar) {
     // extract unique languages in dest dir
     const languagesInFiles = [...new Set(destination.map(x => x.lang))].sort().map(x => x.toLowerCase());
 
-    console.debug(`Found ${languagesInFiles.join(', ')} files in destination dir`);
+    console.debug(`Found ${languagesInFiles.join(', ')} languages in dest dir`);
 
-    const languagesInSource = [];
+    let languagesInSource = [];
 
     // read and parse csv source file
-    const records = csvParse(fs.readFileSync(sourceFilePath), {
+    let records = csvParse(fs.readFileSync(sourceFilePath), {
         columns: (headerRow) => {
             headerRow = headerRow.map(x => x.toLowerCase());
             languagesInSource = headerRow.slice(1).sort();
@@ -91,7 +107,7 @@ function importFromCSVToJSON(ar) {
     });
 
     console.debug(`Found ${languagesInSource.join(', ')} languages in csv`);
-    console.debug(`Found ${records.length + 1} keys in csv`);
+    console.debug(`Found ${records.length} keys in csv`);
 
     // check if the languages matches between source and destination
     if(JSON.stringify(languagesInFiles) !== JSON.stringify(languagesInSource)) {
@@ -99,44 +115,65 @@ function importFromCSVToJSON(ar) {
         return 1;
     }
 
-    // read and parse all destination json files
-    destination = destination.map(x => {
-        x.contents = JSON.parse(fs.readFileSync(x.filename));
-        return x;
-    });
-
-    // flatten and fill with meta data about keys
-    destination = destination.flatMap((df, i, a) => {
-        
-        let prefix = path.relative(
-            destPath, 
-            path.dirname(df.filename)
-        )
-        .split(path.sep)
-        .join(".");
-
-        if(prefix != "")
-            prefix = `${prefix}.`;
-
-        // df is a single destination file here
-        return Object.keys(df.contents).map(k => {
+    destination = destination
+        // read and parse all destination json files
+        .map(x => {
+            const fileContent = fs.readFileSync(x.filename, 'utf8');
+            x.contents = JSON.parse(fileContent);
+            return x;
+        })
+        // Add meta data about keys
+        .map((df, i, a) => {
             
-            // k is a single key in dest file here
-            return {
-                keyInFile: k,
-                effectiveKey: `${prefix}${k}`,
-                lang: df.lang,
-                filename: df.filename,
-                value: df.contents[k]
-            }
+            let prefix = path.relative(
+                destPath, 
+                path.dirname(df.filename)
+            )
+            .split(path.sep)
+            .join(".");
 
+            if(prefix != "")
+                prefix = `${prefix}.`;
+
+            // df is a single destination file here
+            return Object.keys(df.contents).map(k => {
+                
+                // k is a single key in dest file here
+
+                let effectiveKey = `${prefix}${k}`;
+
+                scopeAliases.forEach(x => {
+                    effectiveKey = effectiveKey.replace(x.scope, x.alias);
+                });
+
+                return {
+                    keyInFile: k,
+                    effectiveKey: effectiveKey,
+                    lang: df.lang,
+                    filename: df.filename,
+                    value: df.contents[k]
+                }
+
+            });
         });
-    });
 
-    const numDistinctKeysInDest = ((destination.length + 1) / languagesInFiles);
-    console.debug(`Found ${numDistinctKeysInDest} keys in dest files`);
+    // flatten
+    destination = [].concat.apply([], destination);
 
-    if(numDistinctKeysInDest != records.length + 1) {
+    const uniqueKeysInFiles = [...new Set(destination.map(x => x.effectiveKey))].sort();
+
+    console.debug(`Found ${uniqueKeysInFiles.length} keys in dest files`);
+
+    const keysOnlyInRecords = records.filter(r => destination.filter(d => d.effectiveKey == r.key).length == 0).map(x => x.key);
+    const keysOnlyInDestination = destination.filter(d => records.filter(r => d.effectiveKey == r.key).length == 0).map(x => x.effectiveKey);
+
+    if(keysOnlyInRecords.length > 0 || keysOnlyInDestination.length > 0) {
+        console.error('Keys not found in dest: ', keysOnlyInRecords);
+        console.error('Keys not found in csv: ', keysOnlyInDestination);
+        return 1;
+    }
+
+    if(uniqueKeysInFiles.length != records.length) {
         console.error("Keys mismatch");
         return 1;
     }
@@ -147,7 +184,7 @@ function importFromCSVToJSON(ar) {
             // updateTargets[l][x.key].value = x[l];
 
             destination
-                .filter(d => d.effectiveKey == x.key && d.lang == l)
+                .find(d => d.effectiveKey == x.key && d.lang == l)
                 .value = x[l];
         });
     });
@@ -165,17 +202,19 @@ function importFromCSVToJSON(ar) {
     // save files and sort if user specified to do so
     Object.keys(fileUpdates).forEach(filename => {
         
+        const objToWrite = shouldSort 
+            ? sortObjectByKey(fileUpdates[filename])
+            : fileUpdates[filename]
+
         fs.writeFileSync(
             filename, 
-            ar.sort 
-                ? sortObjectByKey(fileUpdates[filename])
-                : fileUpdates[filename]
+            JSON.stringify(objToWrite, null, 2)
         );
 
     });
 
     const timeDiff = process.hrtime(time);
-    console.log(`Completed in ${timeDiff[0]} seconds`);
+    console.log(`Completed in ${timeDiff[0]}.${parseInt(timeDiff[1] * 1e-6)} seconds`);
 
 }
 
