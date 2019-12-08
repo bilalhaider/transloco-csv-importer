@@ -6,32 +6,32 @@ const csvParse = require("csv-parse/lib/sync");
 require('yargs')
     .usage('Usage: $0 <command> [options]')
     .command(
-        ['json', '$0'], 
-        'Populates JSON file from csv', 
+        ['json', '$0'],
+        'Populates JSON file from csv',
         (yargs) => {
             yargs
-            .option('source', {
-                description: 'Path to the source csv file',
-                alias: 's',
-                default: 'source.csv',
-                type: 'string',
-            })
-            .option('destPath', {
-                description: 'Path to the folder containing i18n json files',
-                alias: 'd',
-                default: path.join('src', 'assets', 'i18n'),
-                type: 'string',
-            })
-            .option('scopeAliases', {
-                description: 'Scope aliases to be used. Multiple values can be provided, each value must be in format alias:scope',
-                alias: 'a',
-                type: 'array',
-            })
-            .option('sort', {
-                description: 'Should sort keys when writing json files',
-                default: true,
-                type: 'boolean',
-            });
+                .option('source', {
+                    description: 'Path to the source csv file',
+                    alias: 's',
+                    default: 'source.csv',
+                    type: 'string',
+                })
+                .option('destPath', {
+                    description: 'Path to the folder containing i18n json files',
+                    alias: 'd',
+                    default: path.join('src', 'assets', 'i18n'),
+                    type: 'string',
+                })
+                .option('scopeAliases', {
+                    description: 'Scope aliases to be used. Multiple values can be provided, each value must be in format alias:scope',
+                    alias: 'a',
+                    type: 'array',
+                })
+                .option('sort', {
+                    description: 'Should sort keys when writing json files',
+                    default: true,
+                    type: 'boolean',
+                });
         },
         importFromCSVToJSON
     )
@@ -59,13 +59,13 @@ function importFromCSVToJSON(ar) {
     console.log(`Starting csv to json operation. CSV: ${sourceFilePath}, JSON files in: ${destPath}. Aliases used: ${scopeAliases.map(x => `${x.alias}:${x.scope}`).join(',')}`);
 
     // check if souce file exists
-    if(!fs.existsSync(sourceFilePath)) {
+    if (!fs.existsSync(sourceFilePath)) {
         console.error('File does not exist', sourceFilePath);
         return 1;
     }
 
     // check if destination directory exists
-    if(!fs.existsSync(destPath)) {
+    if (!fs.existsSync(destPath)) {
         console.error('Directory does not exist', destPath);
         return 1;
     }
@@ -74,7 +74,7 @@ function importFromCSVToJSON(ar) {
     let destination = getFiles(destPath);
 
     // check if there are any dest files
-    if(destination.length == 0) {
+    if (destination.length == 0) {
         console.error('There are no files in dest directory', destPath);
         return 1;
     }
@@ -98,7 +98,7 @@ function importFromCSVToJSON(ar) {
     let languagesInSource = [];
 
     // read and parse csv source file
-    let records = csvParse(fs.readFileSync(sourceFilePath), {
+    let csvRecords = csvParse(fs.readFileSync(sourceFilePath), {
         columns: (headerRow) => {
             headerRow = headerRow.map(x => x.toLowerCase());
             languagesInSource = headerRow.slice(1).sort();
@@ -107,10 +107,10 @@ function importFromCSVToJSON(ar) {
     });
 
     console.debug(`Found ${languagesInSource.join(', ')} languages in csv`);
-    console.debug(`Found ${records.length} keys in csv`);
+    console.debug(`Found ${csvRecords.length} keys in csv`);
 
     // check if the languages matches between source and destination
-    if(JSON.stringify(languagesInFiles) !== JSON.stringify(languagesInSource)) {
+    if (JSON.stringify(languagesInFiles) !== JSON.stringify(languagesInSource)) {
         console.error(`Languages mismatch`);
         return 1;
     }
@@ -124,20 +124,20 @@ function importFromCSVToJSON(ar) {
         })
         // Add meta data about keys
         .map((df, i, a) => {
-            
+
             let prefix = path.relative(
-                destPath, 
+                destPath,
                 path.dirname(df.filename)
             )
-            .split(path.sep)
-            .join(".");
+                .split(path.sep)
+                .join(".");
 
-            if(prefix != "")
+            if (prefix != "")
                 prefix = `${prefix}.`;
 
             // df is a single destination file here
             return Object.keys(df.contents).map(k => {
-                
+
                 // k is a single key in dest file here
 
                 let effectiveKey = `${prefix}${k}`;
@@ -164,28 +164,47 @@ function importFromCSVToJSON(ar) {
 
     console.debug(`Found ${uniqueKeysInFiles.length} keys in dest files`);
 
-    const keysOnlyInRecords = records.filter(r => destination.filter(d => d.effectiveKey == r.key).length == 0).map(x => x.key);
-    const keysOnlyInDestination = destination.filter(d => records.filter(r => d.effectiveKey == r.key).length == 0).map(x => x.effectiveKey);
+    const keysOnlyInRecords = csvRecords.filter(r => destination.filter(d => d.effectiveKey == r.key).length == 0).map(x => x.key);
+    const keysOnlyInDestination = destination.filter(d => csvRecords.filter(r => d.effectiveKey == r.key).length == 0).map(x => x.effectiveKey);
 
-    if(keysOnlyInRecords.length > 0 || keysOnlyInDestination.length > 0) {
+    if (keysOnlyInRecords.length > 0 || keysOnlyInDestination.length > 0) {
         console.error('Keys not found in dest: ', keysOnlyInRecords);
         console.error('Keys not found in csv: ', keysOnlyInDestination);
-        return 1;
+
+        var readlineSync = require('readline-sync');
+        if (readlineSync.keyInYN('Press "Y" to include missing keys in json files. Missing keys in csv files will be kept as is. Press any other key to stop.')) {
+        }
+        else {
+            return 1;
+        }
     }
 
-    if(uniqueKeysInFiles.length != records.length) {
-        console.error("Keys mismatch");
-        return 1;
-    }
+    // if (uniqueKeysInFiles.length != csvRecords.length) {
+    //     console.error("Keys mismatch");
+    //     return 1;
+    // }
 
     // foreach source record and foreach its lang find corresponding object in destination and set its value
-    records.forEach(x => {
+    csvRecords.forEach(x => {
         languagesInSource.forEach(l => {
             // updateTargets[l][x.key].value = x[l];
 
-            destination
-                .find(d => d.effectiveKey == x.key && d.lang == l)
-                .value = x[l];
+            var entry = destination
+                .find(d => d.effectiveKey == x.key && d.lang == l);
+
+            // if entry is not found in existing json files, create new entry and iclude it in a default filename
+            if (!entry) {
+                entry = {
+                    keyInFile: x.key,
+                    effectiveKey: x.key, // todo: figure out scoping etc here
+                    lang: l,
+                    filename: path.join(destPath, `${l}.json`)
+                };
+
+                destination.push(entry);
+            }
+
+            entry.value = x[l];
         });
     });
 
@@ -193,7 +212,7 @@ function importFromCSVToJSON(ar) {
 
     // prepare for saving files
     destination.forEach(d => {
-        if(!fileUpdates[d.filename])
+        if (!fileUpdates[d.filename])
             fileUpdates[d.filename] = {};
 
         fileUpdates[d.filename][d.keyInFile] = d.value;
@@ -201,13 +220,13 @@ function importFromCSVToJSON(ar) {
 
     // save files and sort if user specified to do so
     Object.keys(fileUpdates).forEach(filename => {
-        
-        const objToWrite = shouldSort 
+
+        const objToWrite = shouldSort
             ? sortObjectByKey(fileUpdates[filename])
             : fileUpdates[filename]
 
         fs.writeFileSync(
-            filename, 
+            filename,
             JSON.stringify(objToWrite, null, 2)
         );
 
@@ -218,12 +237,12 @@ function importFromCSVToJSON(ar) {
 
 }
 
-function getFiles(dir, files_){
+function getFiles(dir, files_) {
     files_ = files_ || [];
     var files = fs.readdirSync(dir);
-    for (var i in files){
+    for (var i in files) {
         var name = path.join(dir, files[i]);
-        if (fs.statSync(name).isDirectory()){
+        if (fs.statSync(name).isDirectory()) {
             getFiles(name, files_);
         } else {
             files_.push(name);
@@ -233,9 +252,9 @@ function getFiles(dir, files_){
 }
 
 function sortObjectByKey(unordered) {
-    
+
     const ordered = {};
-    Object.keys(unordered).sort().forEach(function(key) {
+    Object.keys(unordered).sort().forEach(function (key) {
         ordered[key] = unordered[key];
     });
 

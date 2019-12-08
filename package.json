@@ -1,6 +1,6 @@
 {
   "name": "transloco-csv-importer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Node script to populate transloco i18n key files from a source csv file",
   "bin": {
     "tci": "./cli.js"
@@ -19,6 +19,7 @@
   "dependencies": {
     "csv-parse": "^4.8.2",
     "path": "^0.12.7",
+    "readline-sync": "^1.4.10",
     "yargs": "^15.0.2"
   }
 }
